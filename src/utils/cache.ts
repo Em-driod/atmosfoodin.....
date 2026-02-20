@@ -188,7 +188,11 @@ export const cacheHelpers = {
   
   invalidateProteins: () => {
     cache.delete('proteins_all');
-    cache.delete('menu_combined');
     console.log('🗑️ Invalidated protein caches');
+  },
+  
+  clearAll: () => {
+    cache.clear();
+    console.log('🗑️ Cleared all caches');
   }
 };

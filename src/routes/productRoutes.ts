@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProducts, getProteins, createProduct, getMenu } from '../controllers/productController';
+import { getProducts, getProteins, createProduct, createProtein, getMenu } from '../controllers/productController';
 import { upload } from '../config/cloudinary';
 import { cacheHelpers } from '../utils/cache';
 
@@ -13,5 +13,12 @@ router.post('/', upload.single('image'), (req, res, next) => {
     cacheHelpers.invalidateProducts();
     next();
 }, createProduct);
+
+// Protein management routes
+router.post('/proteins', (req, res, next) => {
+    // Invalidate cache when new protein is created
+    cacheHelpers.invalidateProteins();
+    next();
+}, createProtein);
 
 export default router;

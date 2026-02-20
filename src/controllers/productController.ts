@@ -24,6 +24,26 @@ export const getProducts = async (req: Request, res: Response) => {
     }
 };
 
+export const createProtein = async (req: Request, res: Response) => {
+    try {
+        const proteinData = {
+            name: req.body.name,
+            price: req.body.price,
+            isAvailable: req.body.isAvailable !== undefined ? req.body.isAvailable : true
+        };
+
+        const protein = new Protein(proteinData);
+        const savedProtein = await protein.save();
+        
+        // Invalidate cache when new protein is created
+        cacheHelpers.invalidateProteins();
+        
+        res.status(201).json(savedProtein);
+    } catch (error: any) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
 export const getProteins = async (req: Request, res: Response) => {
     try {
         // Try to get from cache first
