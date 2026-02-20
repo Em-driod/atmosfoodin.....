@@ -38,9 +38,17 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check route
+// Health check routes
 app.get('/', (req: Request, res: Response) => {
     res.json({ message: '🍽️ Atmos Food API is running!' });
+});
+
+app.get('/health', (req: Request, res: Response) => {
+    res.json({ 
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
 });
 
 // Routes
