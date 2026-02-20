@@ -1,0 +1,42 @@
+{
+    "name": "atmos-food-backend",
+    "version": "1.0.0",
+    "description": "Atmos Food Backend API",
+    "main": "dist/index.js",
+    "scripts": {
+        "dev": "nodemon",
+        "build": "tsc",
+        "start": "node dist/index.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@types/compression": "^1.8.1",
+        "axios": "^1.13.5",
+        "cloudinary": "^1.41.3",
+        "compression": "^1.8.1",
+        "cors": "^2.8.6",
+        "dotenv": "^17.3.1",
+        "express": "^5.2.1",
+        "express-rate-limit": "^8.2.1",
+        "mongoose": "^9.2.1",
+        "morgan": "^1.10.1",
+        "multer": "^2.0.2",
+        "multer-storage-cloudinary": "^4.0.0",
+        "slugify": "^1.6.6",
+        "telegraf": "^4.16.3",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@types/body-parser": "^1.19.6",
+        "@types/cors": "^2.8.19",
+        "@types/express": "^5.0.6",
+        "@types/morgan": "^1.9.10",
+        "@types/multer": "^2.0.0",
+        "@types/node": "^25.2.3",
+        "nodemon": "^3.1.11",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.9.3"
+    }
+}
