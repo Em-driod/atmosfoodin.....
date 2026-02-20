@@ -215,7 +215,7 @@ bot.start((ctx) => {
 });
 
 bot.help((ctx) => {
-    ctx.reply('👋 Welcome to Atmos Food Admin Bot!\n\nCommands:\n/menu - View current menu\n/orders - View recent orders\n/history - View order history\n/add_product - Add a new item\n/add_protein - Add a new protein\n/delete_product - Remove a product\n/delete_protein - Remove a protein\n/clear_orders - Archive today\'s orders');
+    ctx.reply('👋 Welcome to Atmos Food Admin Bot!\n\nCommands:\n/menu - View current menu\n/orders - View recent orders\n/history - View order history\n/add_product - Add a new item\n/add_protein - Add a new protein\n/delete_product - Remove a product\n/delete_protein - Remove a protein\n/clear_orders - Archive today\'s orders\n/clearcache - Clear website cache instantly\n\n✨ Use /clearcache for instant updates!');
 });
 
 bot.command('add_product', (ctx) => ctx.scene.enter('ADD_PRODUCT_WIZARD'));
@@ -328,6 +328,15 @@ bot.command('history', async (ctx) => {
         ctx.replyWithMarkdown(message);
     } catch (error) {
         ctx.reply('Error fetching history.');
+    }
+});
+
+bot.command('clearcache', async (ctx) => {
+    try {
+        cacheHelpers.clearAll();
+        ctx.reply('🗑️ Cache cleared successfully!\n\n✨ All updates will appear instantly on the website!\n🔄 Tell users to refresh if needed.');
+    } catch (error: any) {
+        ctx.reply(`❌ Error clearing cache: ${error.message}`);
     }
 });
 
