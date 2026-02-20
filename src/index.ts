@@ -51,6 +51,13 @@ app.get('/health', (req: Request, res: Response) => {
     });
 });
 
+// Admin cache clear endpoint
+app.post('/admin/clear-cache', (req: Request, res: Response) => {
+    const { cacheHelpers } = require('./utils/cache');
+    cacheHelpers.clearAll();
+    res.json({ message: 'Cache cleared successfully' });
+});
+
 // Routes
 import productRoutes from './routes/productRoutes';
 import orderRoutes from './routes/orderRoutes';
