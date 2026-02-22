@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import Order from '../models/Order';
 import Product from '../models/Product';
 import Protein from '../models/Protein';
-import { notifyNewOrder } from '../services/telegram';
+import { notifyNewOrder, notifyPaymentVerification } from '../services/telegram';
 import { calculateFeeFromDistance } from '../config/locations';
 import mongoose from 'mongoose';
 import { createOrderSchema, updateOrderStatusSchema, CreateOrderInput } from '../validators/orderValidator';
@@ -133,6 +133,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 
         // Create order with manual payment status
         const orderReference = `ATMOS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const paymentReference = `MANUAL-${orderReference}`;
         
         const newOrder = new Order({
             items: populatedItems,
@@ -149,6 +150,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             status: 'pending',
             paymentStatus: 'pending',
             orderReference,
+            paymentReference,
             paymentMethod: 'manual'
         });
 
@@ -158,6 +160,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 
         // Send notification to Telegram about new order with pending payment
         const notificationData = {
+            orderReference: savedOrder.orderReference,
             customerName: savedOrder.customerName,
             phoneNumber: savedOrder.phoneNumber,
             address: savedOrder.address,
@@ -174,7 +177,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
         };
 
         // Fire and forget notification
-        notifyNewOrder(notificationData).catch(error => {
+        notifyPaymentVerification(notificationData).catch(error => {
             console.error('Telegram notification failed:', error);
         });
 
@@ -253,6 +256,7 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
 
     // Send notification about payment verification
     const notificationData = {
+        orderReference: order.orderReference,
         customerName: order.customerName,
         phoneNumber: order.phoneNumber,
         address: order.address,

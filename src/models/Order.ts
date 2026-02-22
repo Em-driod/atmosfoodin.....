@@ -28,6 +28,7 @@ export interface IOrder extends Document {
     status: 'pending' | 'preparing' | 'delivered' | 'cancelled';
     paymentStatus: 'pending' | 'success' | 'failed';
     paymentReference: string;
+    orderReference: string;
     paystackReference: string;
     paidAt?: Date;
     receiptImage?: string;
@@ -71,6 +72,7 @@ const OrderSchema: Schema = new Schema({
     status: { type: String, enum: ['pending', 'preparing', 'delivered', 'cancelled'], default: 'pending', index: true },
     paymentStatus: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
     paymentReference: { type: String, required: true },
+    orderReference: { type: String, required: true, unique: true },
     paystackReference: { type: String },
     paidAt: { type: Date },
     receiptImage: { type: String },

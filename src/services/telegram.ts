@@ -516,7 +516,8 @@ export const notifyNewOrder = async (order: any) => {
         }
 
         let orderMessage = `🔔 *New Order Received!* [${order.deliveryMethod === 'pickup' ? 'PICKUP' : 'DELIVERY'}]\n\n`;
-        orderMessage += `👤 *Customer:* ${order.customerName}\n`;
+        orderMessage += `📋 *Order Reference:* ${order.orderReference || 'N/A'}\n`;
+        orderMessage += ` *Customer:* ${order.customerName}\n`;
         orderMessage += `📞 *Phone:* ${order.phoneNumber}\n`;
 
         if (order.deliveryMethod === 'pickup') {
@@ -539,6 +540,7 @@ export const notifyNewOrder = async (order: any) => {
         }
 
         orderMessage += `\n💰 *Total Amount: ₦${order.totalAmount}*`;
+        orderMessage += `\n⏰ *Awaiting Payment Verification*`;
 
         const result = await telegramApiCallWithRetry(
             () => bot.telegram.sendMessage(adminId, orderMessage, { parse_mode: 'Markdown' })
@@ -558,76 +560,90 @@ export const notifyNewOrder = async (order: any) => {
     }
 };
 
-export const initTelegramBot = () => {
-    let retryCount = 0;
-    const maxRetries = 10; // Stop after 10 failed attempts
-    
-    const startBot = async () => {
-        try {
-            // First validate the token by making a simple API call
-            console.log('🤖 Validating Telegram bot token...');
-            const botInfo = await bot.telegram.getMe();
-            console.log(`✅ Bot validated: @${botInfo.username}`);
-            
-            const result = await telegramApiCallWithRetry(
-                () => bot.launch(),
-                5, // More retries for bot startup
-                2000 // Longer base delay for startup
-            );
-            
-            if (result.ok !== false) {
-                console.log('🤖 Telegram Bot is running...');
-            } else {
-                console.log('🤖 Telegram Bot startup failed, retrying...');
-                throw new Error(result.error || 'Bot startup failed');
-            }
-        } catch (error: any) {
-            console.log(`🤖 Failed to start Telegram Bot: ${error.message}`);
-            
-            // Provide specific error guidance
-            if (error.code === 'ENOTFOUND' || error.message.includes('getaddrinfo')) {
-                console.log('❌ Network Error: Cannot resolve Telegram API. Check your internet connection.');
-            } else if (error.code === 401 || error.message.includes('Unauthorized')) {
-                console.log('❌ Auth Error: Invalid Telegram bot token. Check your TELEGRAM_BOT_TOKEN in .env');
-            } else if (error.code === 'ETIMEDOUT') {
-                console.log('❌ Timeout Error: Connection to Telegram API timed out. Try again later.');
-            } else {
-                console.log(`❌ Unknown Error: ${error.code || 'No code'} - ${error.message}`);
-            }
-            
-            retryCount++;
-            if (retryCount >= maxRetries) {
-                console.log(`❌ Telegram Bot failed to start after ${maxRetries} attempts. Giving up.`);
-                console.log('🔧 Check: 1) Internet connection 2) Bot token validity 3) Firewall settings');
-                return; // Stop retrying
-            }
-            
-            console.log('🔄 Will retry bot startup in 30 seconds...');
-            // Retry bot startup after 30 seconds
-            setTimeout(startBot, 30000);
+/**
+ * Notify admin of payment verification
+ */
+export const notifyPaymentVerification = async (order: any) => {
+    try {
+        const adminId = process.env.TELEGRAM_ADMIN_CHAT_ID;
+        if (!adminId) {
+            console.log('⚠️ TELEGRAM_ADMIN_CHAT_ID not set in .env. Skipping notification.');
+            return;
         }
-    };
+        
+        // Send payment verification notification to admin
+        const message = `💰 *Payment Verified*\n\n` +
+            `📋 Order: #${order.id}\n` +
+            `💵 Amount: ₦${order.total}\n` +
+            `👤 Customer: ${order.customerName}\n` +
+            `📱 Phone: ${order.customerPhone}\n` +
+            `📍 Address: ${order.deliveryAddress}`;
+            
+        await bot.telegram.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+        
+    } catch (error: any) {
+        console.log(`❌ Failed to send payment verification notification: ${error.message}`);
+        
+        // Provide specific error guidance
+        if (error.code === 'ENOTFOUND' || error.message.includes('getaddrinfo')) {
+            console.log('❌ Network Error: Cannot resolve Telegram API. Check your internet connection.');
+        } else if (error.code === 401 || error.message.includes('Unauthorized')) {
+            console.log('❌ Auth Error: Invalid Telegram bot token. Check your TELEGRAM_BOT_TOKEN in .env');
+        } else if (error.code === 'ETIMEDOUT') {
+            console.log('❌ Timeout Error: Connection to Telegram API timed out. Try again later.');
+        } else {
+            console.log(`❌ Unknown Error: ${error.code || 'No code'} - ${error.message}`);
+        }
+    }
+};
 
-    startBot();
-
-    // Graceful shutdown
-    process.once('SIGINT', () => {
-        try {
-            bot.stop('SIGINT');
-            console.log('🤖 Telegram Bot stopped (SIGINT)');
-        } catch (error: any) {
-            console.log(`🤖 Error stopping bot: ${error.message}`);
+/**
+ * Initialize and start the Telegram bot
+ */
+export const initTelegramBot = async () => {
+    try {
+        // First validate the token by making a simple API call
+        console.log('🤖 Validating Telegram bot token...');
+        const botInfo = await bot.telegram.getMe();
+        console.log(`✅ Bot validated: @${botInfo.username}`);
+        
+        // Start the bot
+        await bot.launch();
+        console.log('🤖 Telegram Bot is running...');
+        
+    } catch (error: any) {
+        console.log(`🤖 Failed to start Telegram Bot: ${error.message}`);
+        
+        // Provide specific error guidance
+        if (error.code === 'ENOTFOUND' || error.message.includes('getaddrinfo')) {
+            console.log('❌ Network Error: Cannot resolve Telegram API. Check your internet connection.');
+        } else if (error.code === 401 || error.message.includes('Unauthorized')) {
+            console.log('❌ Auth Error: Invalid Telegram bot token. Check your TELEGRAM_BOT_TOKEN in .env');
+        } else if (error.code === 'ETIMEDOUT') {
+            console.log('❌ Timeout Error: Connection to Telegram API timed out. Try again later.');
+        } else {
+            console.log(`❌ Unknown Error: ${error.code || 'No code'} - ${error.message}`);
         }
-    });
-    
-    process.once('SIGTERM', () => {
-        try {
-            bot.stop('SIGTERM');
-            console.log('🤖 Telegram Bot stopped (SIGTERM)');
-        } catch (error: any) {
-            console.log(`🤖 Error stopping bot: ${error.message}`);
-        }
-    });
+        
+        // Graceful shutdown handlers
+        process.once('SIGINT', () => {
+            try {
+                bot.stop('SIGINT');
+                console.log('🤖 Telegram Bot stopped (SIGINT)');
+            } catch (error: any) {
+                console.log(`🤖 Error stopping bot: ${error.message}`);
+            }
+        });
+        
+        process.once('SIGTERM', () => {
+            try {
+                bot.stop('SIGTERM');
+                console.log('🤖 Telegram Bot stopped (SIGTERM)');
+            } catch (error: any) {
+                console.log(`🤖 Error stopping bot: ${error.message}`);
+            }
+        });
+    }
 };
 
 export default bot;
