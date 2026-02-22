@@ -79,6 +79,15 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             totalAmount += deliveryFee;
         }
 
+        console.log('Order calculation:', {
+            itemsCount: items.length,
+            subtotal: totalAmount - deliveryFee,
+            deliveryFee,
+            totalAmount,
+            deliveryMethod,
+            deliveryDistance: validatedData.deliveryDistance
+        });
+
         // Use verification code from frontend or generate one if not provided
         let pickupCode = '';
         let deliveryCode = '';
