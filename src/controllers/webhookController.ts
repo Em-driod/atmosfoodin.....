@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import Order from '../models/Order';
-import { notifyNewOrder } from '../services/telegram';
+import { notifyNewOrder, telegramApiCallWithRetry } from '../services/telegram';
 
 // Paystack webhook handler
 export const handlePaystackWebhook = async (req: Request, res: Response) => {
@@ -206,10 +206,12 @@ const sendPaymentNotification = async (order: any, status: 'success' | 'failed')
         const adminId = process.env.TELEGRAM_ADMIN_CHAT_ID;
         if (adminId) {
             const bot = await import('../services/telegram').then(m => m.default);
-            await bot.telegram.sendMessage(adminId, message, { parse_mode: 'Markdown' });
+            await telegramApiCallWithRetry(
+                () => bot.telegram.sendMessage(adminId, message, { parse_mode: 'Markdown' })
+            );
         }
 
-    } catch (error) {
-        console.error('❌ Error sending payment notification:', error);
+    } catch (error: any) {
+        console.log(`🤖 Failed to send payment notification: ${error.message}`);
     }
 };
