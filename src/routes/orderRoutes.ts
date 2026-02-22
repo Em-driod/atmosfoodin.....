@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { createOrder, getOrders, updateOrderStatus, getOrderById } from '../controllers/orderController';
-import { handlePaystackWebhook } from '../controllers/webhookController';
+import { createOrder, getOrders, updateOrderStatus, getOrderById, verifyPayment } from '../controllers/orderController';
 import { auth } from '../middleware/auth';
 import { validateBody } from '../middleware/validation';
 import { createOrderSchema, updateOrderStatusSchema } from '../validators/orderValidator';
@@ -9,7 +8,7 @@ const router = Router();
 
 // Public routes
 router.post('/', validateBody(createOrderSchema), createOrder);
-router.post('/webhook', handlePaystackWebhook);
+router.post('/verify-payment', verifyPayment);
 router.get('/:id', getOrderById);
 
 // Protected routes (Admin only)

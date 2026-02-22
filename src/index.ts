@@ -8,7 +8,6 @@ import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import connectDB from './config/db';
 import { initTelegramBot } from './services/telegram';
-import { errorHandler } from './utils/errorHandler';
 
 // Connect to Database
 connectDB();
@@ -35,8 +34,15 @@ app.use(limiter);
 app.use(compression());
 app.use(cors());
 app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// JSON parsing middleware with error handling
+app.use((req, res, next) => {
+    res.setHeader('Content-Type', 'application/json');
+    next();
+});
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health check routes
 app.get('/', (req: Request, res: Response) => {
@@ -66,7 +72,20 @@ app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 
 // Error handling middleware (must be last)
-app.use(errorHandler);
+app.use((err: any, req: Request, res: Response, next: any) => {
+    console.error('Global error handler:', err);
+    
+    // Ensure JSON response with proper content type
+    res.setHeader('Content-Type', 'application/json');
+    
+    const errorResponse = {
+        success: false,
+        message: err.message || 'Internal server error',
+        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    };
+    
+    res.status(err.status || 500).json(errorResponse);
+});
 
 // Start server
 app.listen(PORT, () => {

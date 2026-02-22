@@ -3,19 +3,42 @@ import Order from '../models/Order';
 import Product from '../models/Product';
 import Protein from '../models/Protein';
 import { notifyNewOrder } from '../services/telegram';
-import { initializePayment } from '../services/paystack';
 import { calculateFeeFromDistance } from '../config/locations';
-import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { createOrderSchema, updateOrderStatusSchema, CreateOrderInput } from '../validators/orderValidator';
 import { AppError, asyncHandler } from '../utils/errorHandler';
 
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
+    console.log('=== ORDER CREATION START ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('Request headers:', req.headers);
+    
     // Validate input
-    const validatedData: CreateOrderInput = createOrderSchema.parse(req.body);
+    let validatedData: CreateOrderInput;
+    try {
+        validatedData = createOrderSchema.parse(req.body);
+    } catch (validationError: any) {
+        console.error('Validation error:', validationError);
+        return res.status(400).json({
+            success: false,
+            message: 'Validation failed',
+            errors: validationError.errors || validationError.issues
+        });
+    }
+    
     const { items, customerName, email, phoneNumber, address, deliveryMethod } = validatedData;
 
+    console.log('Validated data:', {
+        itemsCount: items?.length || 0,
+        customerName,
+        email,
+        phoneNumber,
+        address,
+        deliveryMethod
+    });
+
     if (!items || items.length === 0) {
+        console.error('ERROR: No items provided');
         throw new AppError('Order items are required', 400);
     }
 
@@ -93,7 +116,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
         let deliveryCode = '';
 
         if (validatedData.verificationCode) {
-            // Use the verification code from frontend
+            // Use verification code from frontend
             if (validatedData.deliveryMethod === 'pickup') {
                 pickupCode = validatedData.verificationCode;
             } else {
@@ -108,9 +131,10 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             }
         }
 
-        // Initialize Paystack Payment with order data as metadata
+        // Create order with manual payment status
         const orderReference = `ATMOS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        const paymentData = await initializePayment(email, totalAmount, orderReference, {
+        
+        const newOrder = new Order({
             items: populatedItems,
             totalAmount,
             customerName,
@@ -121,87 +145,139 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             deliveryCoordinates: validatedData.deliveryCoordinates,
             deliveryDistance: validatedData.deliveryDistance,
             pickupCode: pickupCode || undefined,
-            deliveryCode: deliveryCode || undefined
+            deliveryCode: deliveryCode || undefined,
+            status: 'pending',
+            paymentStatus: 'pending',
+            orderReference,
+            paymentMethod: 'manual'
         });
 
-        // Only return payment URL, order will be created after payment confirmation
-        res.status(200).json({
-            authorization_url: paymentData.authorization_url,
-            reference: paymentData.reference
+        const savedOrder = await newOrder.save();
+        await Order.populate(savedOrder, 'items.product');
+        await Order.populate(savedOrder, 'items.proteins');
+
+        // Send notification to Telegram about new order with pending payment
+        const notificationData = {
+            customerName: savedOrder.customerName,
+            phoneNumber: savedOrder.phoneNumber,
+            address: savedOrder.address,
+            deliveryMethod: savedOrder.deliveryMethod,
+            pickupCode: savedOrder.pickupCode,
+            deliveryCode: savedOrder.deliveryCode,
+            totalAmount: savedOrder.totalAmount,
+            items: savedOrder.items.map((item: any) => ({
+                product: { name: (item.product as any).name },
+                proteins: item.proteins ? item.proteinNames : [],
+                quantity: item.quantity,
+                price: item.price
+            }))
+        };
+
+        // Fire and forget notification
+        notifyNewOrder(notificationData).catch(error => {
+            console.error('Telegram notification failed:', error);
         });
+
+        // Return order details for manual payment
+        const responseData = {
+            success: true,
+            orderId: savedOrder._id,
+            orderReference,
+            totalAmount,
+            paymentInstructions: {
+                bankName: "Moniepoint",
+                accountNumber: "5228829625",
+                accountName: "ATMOS FOOD NG",
+                whatsappNumber: "08075389127",
+                message: `Please pay ₦${totalAmount.toLocaleString()} to the above account and share receipt screenshot on WhatsApp for verification.`
+            }
+        };
+
+        console.log('Sending response:', JSON.stringify(responseData, null, 2));
+        res.status(200).json(responseData);
         
-    } catch (error) {
-        throw error;
+    } catch (error: any) {
+        console.error('Order creation error:', error);
+        
+        // Handle different types of errors
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: error.errors
+            });
+        }
+        
+        if (error.code === 11000) {
+            return res.status(400).json({
+                success: false,
+                message: 'Duplicate order reference'
+            });
+        }
+        
+        // Default error response
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Internal server error'
+        });
     }
 });
 
-export const paystackWebhook = asyncHandler(async (req: Request, res: Response) => {
-    const secret = process.env.PAYSTACK_SECRET_KEY;
-    if (!secret) {
-        throw new AppError('Paystack secret key not configured', 500);
+// Manual payment verification endpoint
+export const verifyPayment = asyncHandler(async (req: Request, res: Response) => {
+    const { orderId, receiptImage } = req.body;
+
+    if (!orderId) {
+        throw new AppError('Order ID is required', 400);
     }
 
-    const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(req.body)).digest('hex');
+    const order = await Order.findById(orderId)
+        .populate('items.product')
+        .populate('items.proteins');
 
-    if (hash !== req.headers['x-paystack-signature']) {
-        throw new AppError('Invalid signature', 401);
+    if (!order) {
+        throw new AppError('Order not found', 404);
     }
 
-    const event = req.body;
-    if (event.event === 'charge.success') {
-        const orderData = JSON.parse(event.data.metadata);
-        const paymentReference = event.data.reference;
-
-        // Use transaction for order creation
-        const session = await mongoose.startSession();
-        session.startTransaction();
-        
-        try {
-            // Create the order only after successful payment
-            const newOrder = new Order({
-                ...orderData,
-                status: 'confirmed',
-                paymentStatus: 'success',
-                paystackReference: paymentReference
-            });
-
-            const savedOrder = await newOrder.save({ session });
-            await Order.populate(savedOrder, 'items.product');
-            await Order.populate(savedOrder, 'items.proteins');
-
-            // Trigger Telegram notification (outside transaction)
-            await session.commitTransaction();
-            session.endSession();
-
-            const notificationData = {
-                customerName: savedOrder.customerName,
-                phoneNumber: savedOrder.phoneNumber,
-                address: savedOrder.address,
-                deliveryMethod: savedOrder.deliveryMethod,
-                pickupCode: savedOrder.pickupCode,
-                deliveryCode: savedOrder.deliveryCode,
-                totalAmount: savedOrder.totalAmount,
-                items: savedOrder.items.map((item: any) => ({
-                    product: { name: (item.product as any).name },
-                    proteins: item.proteins ? item.proteinNames : [],
-                    quantity: item.quantity,
-                    price: item.price
-                }))
-            };
-
-            // Fire and forget notification
-            notifyNewOrder(notificationData).catch(error => {
-                console.error('Telegram notification failed:', error);
-            });
-            
-        } catch (error) {
-            await session.abortTransaction();
-            session.endSession();
-            throw error;
-        }
+    if (order.paymentStatus === 'success') {
+        throw new AppError('Payment already verified', 400);
     }
 
-    res.status(200).send('Webhook Received');
+    // Update order status to paid
+    order.paymentStatus = 'success';
+    order.status = 'preparing';
+    order.paidAt = new Date();
+    order.receiptImage = receiptImage;
+
+    await order.save();
+
+    // Send notification about payment verification
+    const notificationData = {
+        customerName: order.customerName,
+        phoneNumber: order.phoneNumber,
+        address: order.address,
+        deliveryMethod: order.deliveryMethod,
+        pickupCode: order.pickupCode,
+        deliveryCode: order.deliveryCode,
+        totalAmount: order.totalAmount,
+        items: order.items.map((item: any) => ({
+            product: { name: (item.product as any).name },
+            proteins: item.proteins ? item.proteinNames : [],
+            quantity: item.quantity,
+            price: item.price
+        }))
+    };
+
+    // Fire and forget notification
+    notifyNewOrder(notificationData).catch(error => {
+        console.error('Telegram notification failed:', error);
+    });
+
+    res.json({
+        success: true,
+        message: 'Payment verified successfully',
+        order
+    });
 });
 
 export const getOrders = asyncHandler(async (req: Request, res: Response) => {

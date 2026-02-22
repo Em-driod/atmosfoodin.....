@@ -30,6 +30,8 @@ export interface IOrder extends Document {
     paymentReference: string;
     paystackReference: string;
     paidAt?: Date;
+    receiptImage?: string;
+    paymentMethod?: string;
     paymentDetails?: {
         method: string;
         amount: number;
@@ -71,6 +73,8 @@ const OrderSchema: Schema = new Schema({
     paymentReference: { type: String, required: true },
     paystackReference: { type: String },
     paidAt: { type: Date },
+    receiptImage: { type: String },
+    paymentMethod: { type: String },
     paymentDetails: {
         method: { type: String },
         amount: { type: Number },
