@@ -22,6 +22,9 @@ export interface IOrder extends Document {
         lng: number;
     };
     deliveryDistance?: number;
+    deliveryFee?: number;
+    deliveryAreaId?: string;
+    deliveryLGA?: string;
     pickupCode?: string;
     deliveryCode?: string;
     isArchived: boolean;
@@ -66,6 +69,9 @@ const OrderSchema: Schema = new Schema({
         lng: { type: Number }
     },
     deliveryDistance: { type: Number },
+    deliveryFee: { type: Number },
+    deliveryAreaId: { type: String },
+    deliveryLGA: { type: String },
     pickupCode: { type: String },
     deliveryCode: { type: String },
     isArchived: { type: Boolean, default: false },

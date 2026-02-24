@@ -12,7 +12,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
     console.log('=== ORDER CREATION START ===');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
     console.log('Request headers:', req.headers);
-    
+
     // Validate input
     let validatedData: CreateOrderInput;
     try {
@@ -25,7 +25,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             errors: validationError.errors || validationError.issues
         });
     }
-    
+
     const { items, customerName, email, phoneNumber, address, deliveryMethod } = validatedData;
 
     console.log('Validated data:', {
@@ -49,20 +49,20 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
         // Get all product IDs and protein IDs for bulk queries
         const productIds = items.map((item: CreateOrderInput['items'][0]) => item.product);
         const proteinIds = items.flatMap((item: CreateOrderInput['items'][0]) => item.proteins || []);
-        
+
         // Bulk fetch products and proteins
         const [products, proteins] = await Promise.all([
             Product.find({ _id: { $in: productIds } }),
             Protein.find({ _id: { $in: proteinIds } })
         ]);
-        
+
         // Create maps for quick lookup
         const productMap = new Map(products.map(p => [p._id.toString(), p]));
         const proteinMap = new Map(proteins.map(p => [p._id.toString(), p]));
 
         for (const item of items as CreateOrderInput['items']) {
             const product = productMap.get(item.product);
-            
+
             if (!product) {
                 throw new AppError(`Product ${item.product} not found`, 404);
             }
@@ -96,10 +96,19 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
         }
 
         // Calculate delivery fee
+        // Priority:
+        // 1) Frontend-provided fixed deliveryFee (by area)
+        // 2) Distance-based fee (legacy)
+        // 3) 0 for pickup / unspecified
         let deliveryFee = 0;
-        if (deliveryMethod === 'delivery' && validatedData.deliveryDistance) {
-            deliveryFee = calculateFeeFromDistance(validatedData.deliveryDistance);
-            totalAmount += deliveryFee;
+        if (deliveryMethod === 'delivery') {
+            if (typeof validatedData.deliveryFee === 'number') {
+                deliveryFee = validatedData.deliveryFee;
+                totalAmount += deliveryFee;
+            } else if (validatedData.deliveryDistance) {
+                deliveryFee = calculateFeeFromDistance(validatedData.deliveryDistance);
+                totalAmount += deliveryFee;
+            }
         }
 
         console.log('Order calculation:', {
@@ -134,7 +143,7 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
         // Create order with manual payment status
         const orderReference = `ATMOS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const paymentReference = `MANUAL-${orderReference}`;
-        
+
         const newOrder = new Order({
             items: populatedItems,
             totalAmount,
@@ -145,6 +154,9 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             deliveryMethod: deliveryMethod || 'delivery',
             deliveryCoordinates: validatedData.deliveryCoordinates,
             deliveryDistance: validatedData.deliveryDistance,
+            deliveryFee: deliveryMethod === 'delivery' ? deliveryFee : 0,
+            deliveryAreaId: validatedData.deliveryAreaId,
+            deliveryLGA: validatedData.deliveryLGA,
             pickupCode: pickupCode || undefined,
             deliveryCode: deliveryCode || undefined,
             status: 'pending',
@@ -169,15 +181,15 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             deliveryCode: savedOrder.deliveryCode,
             totalAmount: savedOrder.totalAmount,
             items: savedOrder.items.map((item: any) => ({
-                product: { name: (item.product as any).name },
-                proteins: item.proteins ? item.proteinNames : [],
+                product: { name: item.productName || 'Unknown item' },
+                proteins: item.proteinNames || [],
                 quantity: item.quantity,
                 price: item.price
             }))
         };
 
         // Fire and forget notification
-        notifyPaymentVerification(notificationData).catch(error => {
+        notifyNewOrder(notificationData).catch(error => {
             console.error('Telegram notification failed:', error);
         });
 
@@ -198,10 +210,10 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 
         console.log('Sending response:', JSON.stringify(responseData, null, 2));
         res.status(200).json(responseData);
-        
+
     } catch (error: any) {
         console.error('Order creation error:', error);
-        
+
         // Handle different types of errors
         if (error.name === 'ValidationError') {
             return res.status(400).json({
@@ -210,14 +222,14 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
                 errors: error.errors
             });
         }
-        
+
         if (error.code === 11000) {
             return res.status(400).json({
                 success: false,
                 message: 'Duplicate order reference'
             });
         }
-        
+
         // Default error response
         res.status(500).json({
             success: false,
@@ -265,8 +277,8 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
         deliveryCode: order.deliveryCode,
         totalAmount: order.totalAmount,
         items: order.items.map((item: any) => ({
-            product: { name: (item.product as any).name },
-            proteins: item.proteins ? item.proteinNames : [],
+            product: { name: item.productName || 'Unknown item' },
+            proteins: item.proteinNames || [],
             quantity: item.quantity,
             price: item.price
         }))
@@ -294,17 +306,17 @@ export const getOrders = asyncHandler(async (req: Request, res: Response) => {
 export const updateOrderStatus = asyncHandler(async (req: Request, res: Response) => {
     const validatedData = updateOrderStatusSchema.parse(req.body);
     const { status } = validatedData;
-    
+
     const order = await Order.findByIdAndUpdate(
         req.params.id,
         { status },
         { new: true }
     );
-    
+
     if (!order) {
         throw new AppError('Order not found', 404);
     }
-    
+
     res.json(order);
 });
 
@@ -316,6 +328,6 @@ export const getOrderById = asyncHandler(async (req: Request, res: Response) => 
     if (!order) {
         throw new AppError('Order not found', 404);
     }
-    
+
     res.json(order);
 });

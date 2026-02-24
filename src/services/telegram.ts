@@ -175,10 +175,10 @@ const productWizard = new Scenes.WizardScene<MyContext>(
                 });
 
                 await newProduct.save();
-                
+
                 // Invalidate cache when new product is added
                 cacheHelpers.invalidateProducts();
-                
+
                 await safeReply(ctx, `✅ Product *${escapeMarkdown(name)}* added successfully!`, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
                 return ctx.scene.leave();
             } catch (error) {
@@ -221,10 +221,10 @@ const proteinWizard = new Scenes.WizardScene<MyContext>(
                 isAvailable: true
             });
             await newProtein.save();
-            
+
             // Invalidate cache when new protein is added
             cacheHelpers.invalidateProteins();
-            
+
             await safeReply(ctx, `✅ Protein *${escapeMarkdown(newProtein.name)}* added!`, { parse_mode: 'Markdown' });
             return ctx.scene.leave();
         } catch (error) {
@@ -475,27 +475,27 @@ export const telegramApiCallWithRetry = async (
             // Add timeout to the API call
             const result = await Promise.race([
                 apiCall(),
-                new Promise((_, reject) => 
+                new Promise((_, reject) =>
                     setTimeout(() => reject(new Error('Telegram API timeout')), 25000)
                 )
             ]);
             return result;
         } catch (error: any) {
             const isLastAttempt = attempt === maxRetries;
-            const shouldRetry = error.code === 'ETIMEDOUT' || 
-                              error.message.includes('timeout') ||
-                              error.message.includes('ETIMEDOUT') ||
-                              error.code === 'ECONNRESET' ||
-                              error.code === 'ENOTFOUND' ||
-                              error.message.includes('parse'); // Also retry on parse errors
-            
+            const shouldRetry = error.code === 'ETIMEDOUT' ||
+                error.message.includes('timeout') ||
+                error.message.includes('ETIMEDOUT') ||
+                error.code === 'ECONNRESET' ||
+                error.code === 'ENOTFOUND' ||
+                error.message.includes('parse'); // Also retry on parse errors
+
             if (isLastAttempt || !shouldRetry) {
                 // Log silently without crashing
                 console.log(`🤖 Telegram API failed after ${attempt} attempt(s): ${error.message}`);
                 // Return a safe default instead of throwing to prevent crashes
                 return { ok: false, error: error.message };
             }
-            
+
             // Exponential backoff
             const delay = baseDelay * Math.pow(2, attempt - 1);
             console.log(`🤖 Telegram API attempt ${attempt} failed, retrying in ${delay}ms...`);
@@ -545,7 +545,7 @@ export const notifyNewOrder = async (order: any) => {
         const result = await telegramApiCallWithRetry(
             () => bot.telegram.sendMessage(adminId, orderMessage, { parse_mode: 'Markdown' })
         );
-        
+
         // If the API call failed, try without Markdown formatting
         if (!result.ok && result.error?.includes('parse')) {
             console.log('🤖 Retrying notification without Markdown formatting');
@@ -570,20 +570,20 @@ export const notifyPaymentVerification = async (order: any) => {
             console.log('⚠️ TELEGRAM_ADMIN_CHAT_ID not set in .env. Skipping notification.');
             return;
         }
-        
+
         // Send payment verification notification to admin
         const message = `💰 *Payment Verified*\n\n` +
-            `📋 Order: #${order.id}\n` +
-            `💵 Amount: ₦${order.total}\n` +
+            `📋 Order: #${order.orderReference}\n` +
+            `💵 Amount: ₦${order.totalAmount}\n` +
             `👤 Customer: ${order.customerName}\n` +
-            `📱 Phone: ${order.customerPhone}\n` +
-            `📍 Address: ${order.deliveryAddress}`;
-            
+            `📱 Phone: ${order.phoneNumber}\n` +
+            `📍 Address: ${order.address}`;
+
         await bot.telegram.sendMessage(adminId, message, { parse_mode: 'Markdown' });
-        
+
     } catch (error: any) {
         console.log(`❌ Failed to send payment verification notification: ${error.message}`);
-        
+
         // Provide specific error guidance
         if (error.code === 'ENOTFOUND' || error.message.includes('getaddrinfo')) {
             console.log('❌ Network Error: Cannot resolve Telegram API. Check your internet connection.');
@@ -606,14 +606,14 @@ export const initTelegramBot = async () => {
         console.log('🤖 Validating Telegram bot token...');
         const botInfo = await bot.telegram.getMe();
         console.log(`✅ Bot validated: @${botInfo.username}`);
-        
+
         // Start the bot
         await bot.launch();
         console.log('🤖 Telegram Bot is running...');
-        
+
     } catch (error: any) {
         console.log(`🤖 Failed to start Telegram Bot: ${error.message}`);
-        
+
         // Provide specific error guidance
         if (error.code === 'ENOTFOUND' || error.message.includes('getaddrinfo')) {
             console.log('❌ Network Error: Cannot resolve Telegram API. Check your internet connection.');
@@ -624,7 +624,7 @@ export const initTelegramBot = async () => {
         } else {
             console.log(`❌ Unknown Error: ${error.code || 'No code'} - ${error.message}`);
         }
-        
+
         // Graceful shutdown handlers
         process.once('SIGINT', () => {
             try {
@@ -634,7 +634,7 @@ export const initTelegramBot = async () => {
                 console.log(`🤖 Error stopping bot: ${error.message}`);
             }
         });
-        
+
         process.once('SIGTERM', () => {
             try {
                 bot.stop('SIGTERM');

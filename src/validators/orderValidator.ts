@@ -16,6 +16,9 @@ export const createOrderSchema = z.object({
         lng: z.number()
     }).optional(),
     deliveryDistance: z.number().optional(),
+    deliveryFee: z.number().optional(),
+    deliveryAreaId: z.string().optional(),
+    deliveryLGA: z.string().optional(),
     verificationCode: z.string().optional()
 });
 
