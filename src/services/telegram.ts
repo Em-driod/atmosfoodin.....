@@ -532,14 +532,26 @@ export const notifyNewOrder = async (order: any) => {
 
         for (const item of order.items) {
             if (item.product) {
-                orderMessage += `• ${escapeMarkdown(item.product.name)} x ${item.quantity} (₦${item.price.toLocaleString()})\n`;
+                const productPrice = typeof item.product.price === 'number' ? `(₦${item.product.price.toLocaleString()})` : `(₦${(item.price || 0).toLocaleString()})`;
+                orderMessage += `• ${escapeMarkdown(item.product.name)} x ${item.quantity} ${productPrice}\n`;
             }
             if (item.proteins && item.proteins.length > 0) {
-                orderMessage += `  _Proteins: ${item.proteins.map(p => escapeMarkdown(p.name || p)).join(', ')}_\n`;
+                const proteinsDetails = item.proteins.map((p: any) => {
+                    const pName = escapeMarkdown(p.name || p);
+                    const pPrice = typeof p.price === 'number' ? ` (+₦${p.price.toLocaleString()})` : '';
+                    return `${pName}${pPrice}`;
+                }).join(', ');
+                orderMessage += `  _Proteins: ${proteinsDetails}_\n`;
+            }
+            if (item.product && typeof item.product.price === 'number') {
+                orderMessage += `  _Item Subtotal: ₦${((item.price || 0) * (item.quantity || 1)).toLocaleString()}_\n`;
             }
         }
 
-        orderMessage += `\n💰 *Total Amount: ₦${order.totalAmount}*`;
+        if (order.deliveryFee) {
+            orderMessage += `\n🚚 *Delivery Fee: ₦${order.deliveryFee.toLocaleString()}*`;
+        }
+        orderMessage += `\n💰 *Total Amount: ₦${Number(order.totalAmount || 0).toLocaleString()}*`;
         orderMessage += `\n⏰ *Awaiting Payment Verification*`;
 
         const result = await telegramApiCallWithRetry(

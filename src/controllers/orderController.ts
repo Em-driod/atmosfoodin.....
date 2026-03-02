@@ -180,9 +180,13 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
             pickupCode: savedOrder.pickupCode,
             deliveryCode: savedOrder.deliveryCode,
             totalAmount: savedOrder.totalAmount,
+            deliveryFee: savedOrder.deliveryFee,
             items: savedOrder.items.map((item: any) => ({
-                product: { name: item.productName || 'Unknown item' },
-                proteins: item.proteinNames || [],
+                product: {
+                    name: item.product?.name || item.productName || 'Unknown item',
+                    price: item.product?.price || 0
+                },
+                proteins: item.proteins || [],
                 quantity: item.quantity,
                 price: item.price
             }))
@@ -276,9 +280,13 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
         pickupCode: order.pickupCode,
         deliveryCode: order.deliveryCode,
         totalAmount: order.totalAmount,
+        deliveryFee: order.deliveryFee,
         items: order.items.map((item: any) => ({
-            product: { name: item.productName || 'Unknown item' },
-            proteins: item.proteinNames || [],
+            product: {
+                name: item.product?.name || item.productName || 'Unknown item',
+                price: item.product?.price || 0
+            },
+            proteins: item.proteins || [],
             quantity: item.quantity,
             price: item.price
         }))
