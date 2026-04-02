@@ -35,12 +35,15 @@ interface MyWizardSession extends Scenes.WizardSessionData {
         name?: string;
         price?: number;
     };
+    editingProductId?: string;
+    editingProteinId?: string;
 }
 
 type MyContext = Context & {
     match: RegExpMatchArray;
     scene: Scenes.SceneContextScene<MyContext, MyWizardSession>;
     wizard: Scenes.WizardContextWizard<MyContext>;
+    session: Scenes.SceneSession<MyWizardSession>;
 };
 
 type BotContext = Context & {
@@ -309,7 +312,7 @@ bot.start(safeCommandHandler(async (ctx) => {
 }));
 
 bot.help(safeCommandHandler(async (ctx) => {
-    await safeReply(ctx, '👋 Welcome to Atmos Food Admin Bot!\n\nCommands:\n/menu - View current menu\n/orders - View recent orders\n/history - View order history\n/add_product - Add a new item\n/add_protein - Add a new protein\n/delete_product - Remove a product\n/delete_protein - Remove a protein\n/clear_orders - Archive today\'s orders\n/clearcache - Clear website cache instantly\n\n✨ Use /clearcache for instant updates!');
+    await safeReply(ctx, '👋 Welcome to Atmos Food Admin Bot!\n\nCommands:\n/menu - View current menu\n/orders - View recent orders\n/history - View order history\n/add_product - Add a new item\n/add_protein - Add a new protein\n/delete_product - Remove a product\n/delete_protein - Remove a protein\n/edit_product_prices - Edit product prices\n/edit_protein_prices - Edit protein prices\n/suspend_all_product - Suspend all products\n/suspend_product - Suspend a single product\n/clear_orders - Archive today\'s orders\n/clearcache - Clear website cache instantly\n\n✨ Use /clearcache for instant updates!');
 }));
 
 bot.command('add_product', safeCommandHandler(async (ctx) => {
@@ -351,6 +354,46 @@ bot.action(/^del_prot_(.+)/, safeCommandHandler(async (ctx) => {
     const protein = await Protein.findByIdAndDelete(id);
     await ctx.answerCbQuery();
     await safeEditMessage(ctx, `🗑️ Deleted protein: *${escapeMarkdown(protein?.name || '')}*`, { parse_mode: 'Markdown' });
+}));
+
+// Edit Product Prices Command
+bot.command('edit_product_prices', safeCommandHandler(async (ctx) => {
+    const products = await Product.find();
+    if (products.length === 0) {
+        await safeReply(ctx, 'No products found to edit.');
+        return;
+    }
+    const keyboard = products.map(p => [Markup.button.callback(`💰 ${p.name} - ₦${p.price}`, `edit_price_prod_${p._id.toString()}`)]);
+    await safeReply(ctx, 'Select a product to edit price:', Markup.inlineKeyboard(keyboard));
+}));
+
+// Edit Protein Prices Command  
+bot.command('edit_protein_prices', safeCommandHandler(async (ctx) => {
+    const proteins = await Protein.find();
+    if (proteins.length === 0) {
+        await safeReply(ctx, 'No proteins found to edit.');
+        return;
+    }
+    const keyboard = proteins.map(p => [Markup.button.callback(`💰 ${p.name} - ₦${p.price}`, `edit_price_prot_${p._id.toString()}`)]);
+    await safeReply(ctx, 'Select a protein to edit price:', Markup.inlineKeyboard(keyboard));
+}));
+
+// Suspend All Products Command
+bot.command('suspend_all_product', safeCommandHandler(async (ctx) => {
+    const result = await Product.updateMany({}, { isAvailable: false });
+    cacheHelpers.invalidateProducts();
+    await safeReply(ctx, `✅ Suspended ${result.modifiedCount} products. All products are now unavailable.\n\n📞 Customers will see: "Atmos Kitchen is Refreshing. Food Currently Not Available. Our chefs are preparing something legendary. Call 08069813105"`);
+}));
+
+// Suspend Single Product Command
+bot.command('suspend_product', safeCommandHandler(async (ctx) => {
+    const products = await Product.find();
+    if (products.length === 0) {
+        await safeReply(ctx, 'No products found to suspend.');
+        return;
+    }
+    const keyboard = products.map(p => [Markup.button.callback(`${p.isAvailable ? '⏸️' : '▶️'} ${p.name} [${p.isAvailable ? 'Active' : 'Suspended'}]`, `suspend_prod_${p._id.toString()}`)]);
+    await safeReply(ctx, 'Select a product to toggle suspension:', Markup.inlineKeyboard(keyboard));
 }));
 
 bot.command('orders', safeCommandHandler(async (ctx) => {
@@ -459,6 +502,92 @@ bot.hears(/^\/toggle_protein_(.+)/, safeCommandHandler(async (ctx) => {
         protein.isAvailable = !protein.isAvailable;
         await protein.save();
         await safeReply(ctx, `✅ Updated *${escapeMarkdown(protein.name)}* to ${protein.isAvailable ? 'Available' : 'Unavailable'}`, { parse_mode: 'Markdown' });
+    }
+}));
+
+// Action handlers for price editing
+bot.action(/^edit_price_prod_(.+)/, safeCommandHandler(async (ctx) => {
+    const productId = ctx.match[1];
+    const product = await Product.findById(productId);
+    if (product) {
+        await ctx.answerCbQuery();
+        await safeEditMessage(ctx, `💰 Enter new price for *${escapeMarkdown(product.name)}* (current: ₦${product.price}):`, { parse_mode: 'Markdown' });
+        // Store the product ID in session for the next step
+        ctx.session.__scenes.editingProductId = productId;
+    }
+}));
+
+bot.action(/^edit_price_prot_(.+)/, safeCommandHandler(async (ctx) => {
+    const proteinId = ctx.match[1];
+    const protein = await Protein.findById(proteinId);
+    if (protein) {
+        await ctx.answerCbQuery();
+        await safeEditMessage(ctx, `💰 Enter new price for *${escapeMarkdown(protein.name)}* (current: ₦${protein.price}):`, { parse_mode: 'Markdown' });
+        // Store the protein ID in session for the next step
+        ctx.session.__scenes.editingProteinId = proteinId;
+    }
+}));
+
+// Action handler for suspend product
+bot.action(/^suspend_prod_(.+)/, safeCommandHandler(async (ctx) => {
+    const productId = ctx.match[1];
+    const product = await Product.findById(productId);
+    if (product) {
+        product.isAvailable = !product.isAvailable;
+        await product.save();
+        cacheHelpers.invalidateProducts();
+        await ctx.answerCbQuery();
+        await safeEditMessage(ctx, `${product.isAvailable ? '▶️' : '⏸️'} *${escapeMarkdown(product.name)}* is now ${product.isAvailable ? 'Active' : 'Suspended'}`, { parse_mode: 'Markdown' });
+    }
+}));
+
+// Handle price updates via text messages
+bot.on('text', safeCommandHandler(async (ctx) => {
+    if (!ctx.message || !('text' in ctx.message)) return;
+    const text = ctx.message.text;
+
+    // Check if we're editing a product price
+    const editingProductId = ctx.session.__scenes?.editingProductId;
+    if (editingProductId) {
+        const newPrice = parseFloat(text);
+        if (isNaN(newPrice) || newPrice <= 0) {
+            await safeReply(ctx, '❌ Please enter a valid positive number for the price.');
+            return;
+        }
+
+        const product = await Product.findById(editingProductId);
+        if (product) {
+            product.price = newPrice;
+            await product.save();
+            cacheHelpers.invalidateProducts();
+            await safeReply(ctx, `✅ Updated *${escapeMarkdown(product.name)}* price to ₦${newPrice}`, { parse_mode: 'Markdown' });
+        }
+        
+        // Clear the editing state
+        delete ctx.session.__scenes.editingProductId;
+        return;
+    }
+
+    // Check if we're editing a protein price
+    const editingProteinId = ctx.session.__scenes?.editingProteinId;
+    if (editingProteinId) {
+        const newPrice = parseFloat(text);
+        if (isNaN(newPrice) || newPrice <= 0) {
+            await safeReply(ctx, '❌ Please enter a valid positive number for the price.');
+            return;
+        }
+
+        const protein = await Protein.findById(editingProteinId);
+        if (protein) {
+            protein.price = newPrice;
+            await protein.save();
+            cacheHelpers.invalidateProteins();
+            await safeReply(ctx, `✅ Updated *${escapeMarkdown(protein.name)}* price to ₦${newPrice}`, { parse_mode: 'Markdown' });
+        }
+        
+        // Clear the editing state
+        delete ctx.session.__scenes.editingProteinId;
+        return;
     }
 }));
 
